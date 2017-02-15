@@ -94,9 +94,10 @@ __global__ void test(unsigned long long* number, bool* guessed)
 }*/
 
 
-__global__ void crack(char* d_password, int digits, int charset, unsigned long long distributor, char* endPassword, bool* cracked, unsigned long long offset)
+__global__ void crack(char* d_password, int digits, int charset, unsigned long long distributor, char* endPassword, bool* cracked, unsigned int factor)
 {
-	unsigned long long id = (unsigned long long)((blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x + offset);
+	unsigned long long id = (unsigned long long)((blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x);
+	id *= factor;
 
 	if (id >= distributor)
 		return;
@@ -104,28 +105,43 @@ __global__ void crack(char* d_password, int digits, int charset, unsigned long l
 	// Werte sichern
 	unsigned long long distributorSave = distributor;
 
-	unsigned long long number = id;
+	unsigned long long number;
+	bool truePassword = false;
 	char currentCharacter = '\0';
 
-	for (int i = 0; i<digits && distributor > 0; i++)
+	for(int j=0;  j<factor;  j++, id++)
 	{
-		currentCharacter = (char)(number / (distributor / charset)) + 'A';
-		distributor = (unsigned long long)(distributor / charset);
-		number = (unsigned long long)(number % distributor);
+		number = id;
+		truePassword = true;
+		distributor = distributorSave;
+		for (int i = 0; i<digits && distributor > 0; i++)
+		{
+			currentCharacter = (char)(number / (distributor / charset)) + 'A';
+			distributor = (unsigned long long)(distributor / charset);
+			number = (unsigned long long)(number % distributor);
 
-		if (currentCharacter != d_password[i])
-			return;
+			if (currentCharacter != d_password[i])
+			{
+				truePassword = false;
+				break;
+			}
+		}
+		if(truePassword)
+			break;
 	}
 
-	distributor = distributorSave;
-	number = id;
-	for (int i = 0; i<digits && distributor > 0; i++)
+	if(truePassword)
 	{
-		endPassword[i] = (int)(number / (distributor / charset)) + 'A';
-		distributor = (int)(distributor / charset);
-		number = (int)(number % distributor);
+		distributor = distributorSave;
+		number = id;
+		for (int i = 0; i<digits && distributor > 0; i++)
+		{
+			endPassword[i] = (int)(number / (distributor / charset)) + 'A';
+			distributor = (int)(distributor / charset);
+			number = (int)(number % distributor);
+		}
+		*cracked = true;
 	}
-	*cracked = true;
 }
 
 
@@ -149,13 +165,8 @@ __host__ bool init(char* password, int digits, int pwCharset, char* endPassword)
 	cudaMalloc(&d_cracked, sizeof(bool));
 
 	printf("Password to crack: %.*s\n", digits, password);
-
-	for(unsigned long long i=0;  i<mainConfig.loops;  i++)
-	{
-		crack<<<mainConfig.blocks, mainConfig.threads>>>(d_password, digits, pwCharset, mainConfig.totalThreads, d_endPassword, d_cracked, i*mainConfig.threadsPerLoop);
-		/*cudaError_t error = cudaGetLastError();
-		printf("Error = %s: %s\n", cudaGetErrorName(error), cudaGetErrorString(error));*/
-	}
+	
+	crack<<<mainConfig.blocks, mainConfig.threads>>>(d_password, digits, pwCharset, mainConfig.totalThreads, d_endPassword, d_cracked, mainConfig.loops);
 
 	cudaMemcpy(endPassword, d_endPassword, sizeof(char) * digits, cudaMemcpyDeviceToHost);
 	cudaMemcpy(&h_cracked, d_cracked, sizeof(bool), cudaMemcpyDeviceToHost);
