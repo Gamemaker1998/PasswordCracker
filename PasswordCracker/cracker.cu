@@ -153,8 +153,8 @@ __host__ bool init(char* password, int digits, int pwCharset, char* endPassword)
 	for(unsigned long long i=0;  i<mainConfig.loops;  i++)
 	{
 		crack<<<mainConfig.blocks, mainConfig.threads>>>(d_password, digits, pwCharset, mainConfig.totalThreads, d_endPassword, d_cracked, i*mainConfig.threadsPerLoop);
-		cudaError_t error = cudaGetLastError();
-		printf("Error = %s: %s\n", cudaGetErrorName(error), cudaGetErrorString(error));
+		/*cudaError_t error = cudaGetLastError();
+		printf("Error = %s: %s\n", cudaGetErrorName(error), cudaGetErrorString(error));*/
 	}
 
 	cudaMemcpy(endPassword, d_endPassword, sizeof(char) * digits, cudaMemcpyDeviceToHost);
@@ -186,20 +186,10 @@ void initRequirements(int digits, int pwCharset)
 	cudaGetDevice(&deviceID);
 	cudaGetDeviceProperties(&mainConfig.properties, deviceID);
 
-	/*mainConfig.totalThreads = (unsigned long long)(pow(pwCharset, digits));
-	mainConfig.loops = (unsigned long long)(1 + mainConfig.totalThreads / pow(2, 32));
-	mainConfig.threadsPerLoop = ceil(mainConfig.totalThreads / mainConfig.loops);*/
-
 	mainConfig.totalThreads = (unsigned long long)(pow(pwCharset, digits));
 
 	mainConfig.totalBlocks = (unsigned long long)(1 + mainConfig.totalThreads / mainConfig.properties.maxThreadsPerBlock);
 	mainConfig.threads = {(unsigned int)mainConfig.properties.maxThreadsPerBlock, (unsigned int)1, (unsigned int)1};
-
-	/*long long delta = mainConfig.totalBlocks;
-	mainConfig.blocks.z = 1;
-	mainConfig.blocks.y = 1 + (delta / mainConfig.properties.maxGridSize[0]);
-	delta %= mainConfig.properties.maxGridSize[0];
-	mainConfig.blocks.x = delta;*/
 
 	unsigned int value = pow(2, 16) - 1;
 
